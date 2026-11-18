@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #0f172a;
+  color: #f8fafc;
+  font-family: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+
+::selection {
+  background: rgba(79, 70, 229, 0.45);
+}
+
+*:focus-visible {
+  outline: 2px solid #818cf8;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
+
+/* Draft canvas: a transparent textarea over a mirrored, highlighted backdrop. */
+.canvas-type {
+  font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.75;
+  letter-spacing: 0;
+  padding: 18px 20px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+
+.hl-critical {
+  background: rgba(239, 68, 68, 0.22);
+  box-shadow: inset 0 -2px 0 #ef4444;
+}
+.hl-medium {
+  background: rgba(245, 158, 11, 0.2);
+  box-shadow: inset 0 -2px 0 #f59e0b;
+}
+.hl-low {
+  background: rgba(99, 102, 241, 0.22);
+  box-shadow: inset 0 -2px 0 #818cf8;
+}
+.hl-active {
+  outline: 2px solid #f8fafc;
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
+del.diff-del {
+  background: rgba(239, 68, 68, 0.16);
+  color: #fecaca;
+  text-decoration-color: #ef4444;
+  padding: 0 3px;
+  border-radius: 3px;
+}
+ins.diff-ins {
+  background: rgba(16, 185, 129, 0.16);
+  color: #a7f3d0;
+  text-decoration: none;
+  padding: 0 3px;
+  border-radius: 3px;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.modal-rise {
+  animation: rise 180ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
