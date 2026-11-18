@@ -37,10 +37,7 @@ export default function TopNavBar({ preflightMs, totalMs, score, status, role, o
       <div className="flex flex-wrap items-center gap-x-8 gap-y-3 px-4 py-3 lg:px-6">
         <div className="flex items-center gap-2.5">
           <img src="/logo.svg" alt="" className="h-7 w-7" />
-          <div className="leading-tight">
-            <div className="text-[15px] font-semibold tracking-tight">Bastion</div>
-            <div className="text-xs text-bastion-muted">Brand-as-code governance</div>
-          </div>
+          <div className="text-[15px] font-semibold leading-tight tracking-tight">bastion</div>
         </div>
 
         <div className="flex items-center gap-2 rounded-lg border border-bastion-line bg-bastion-surface px-3 py-1.5" title="Deterministic regex, hex and WCAG checks. No LLM call.">
