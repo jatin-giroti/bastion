@@ -1,145 +1,203 @@
 import { useState } from "react";
-import { BookOpen, FileJson, Copy, Check } from "lucide-react";
-import { SEVERITY, daysUntil } from "../lib.js";
+import { BookOpen, FileJson, Database, Copy, Check, Search } from "lucide-react";
+import { daysUntil } from "../lib.js";
 
-function Section({ title, children }) {
-  return (
-    <section className="border-t border-bastion-line px-4 py-4">
-      <h3 className="mb-2.5 text-sm font-medium">{title}</h3>
-      {children}
-    </section>
-  );
-}
-
-function RuleBadge({ id }) {
-  return <span className="rounded bg-bastion-bg px-1.5 py-0.5 font-mono text-[11px] text-bastion-muted ring-1 ring-inset ring-bastion-line">{id}</span>;
-}
-
-export default function BrandVaultSidebar({ manifest, source }) {
+export default function BrandVaultSidebar({ manifest, ragChunks = [] }) {
   const [tab, setTab] = useState("rules");
+  const [query, setQuery] = useState("");
   const [copied, setCopied] = useState(false);
-  const tone = manifest.voice_rules.filter((r) => r.type === "tone");
-  const disclaimers = manifest.voice_rules.filter((r) => r.type === "required_disclaimer");
-  const clarifications = manifest.voice_rules.filter((r) => r.type === "clarification");
-  const json = JSON.stringify(manifest, null, 2);
 
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(json); setCopied(true); setTimeout(() => setCopied(false), 1400); } catch { /* clipboard blocked */ }
+  const q = query.trim().toLowerCase();
+  const tone = (manifest.voice_rules || []).filter(
+    (r) => r.type === "tone" && (!q || r.name?.toLowerCase().includes(q) || r.rule_id?.toLowerCase().includes(q))
+  );
+  const disclaimers = (manifest.voice_rules || []).filter(
+    (r) => r.type === "required_disclaimer" && (!q || r.required_text?.toLowerCase().includes(q) || r.rule_id?.toLowerCase().includes(q))
+  );
+  const clarifications = (manifest.voice_rules || []).filter((r) => r.type === "clarification");
+  const terms = (manifest.banned_terms || []).filter(
+    (t) => !q || t.term?.toLowerCase().includes(q) || t.replacement?.toLowerCase().includes(q) || t.rule_id?.toLowerCase().includes(q)
+  );
+  const facts = (manifest.fact_ledger || []).filter(
+    (f) => !q || f.approved_statement?.toLowerCase().includes(q) || f.claim_id?.toLowerCase().includes(q)
+  );
+
+  const json = JSON.stringify(manifest, null, 2);
+  const copyJson = async () => {
+    try {
+      await navigator.clipboard.writeText(json);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    } catch {
+      /* ignore */
+    }
   };
 
   return (
-    <aside className="flex min-h-0 flex-col border-b border-bastion-line bg-bastion-bg lg:border-b-0 lg:border-r" aria-label="Brand vault">
-      <div className="px-4 pb-3 pt-4">
-        <div className="flex items-baseline justify-between">
-          <h2 className="text-[15px] font-semibold">{manifest.brand_name}</h2>
-          <span className="font-mono text-xs text-bastion-muted">v{manifest.version}</span>
-        </div>
-        <p className="mt-0.5 text-xs text-bastion-muted">{source === "api" ? "Loaded from the Bastion API" : "Bundled fallback manifest"}</p>
-        <div className="mt-3 grid grid-cols-2 gap-1 rounded-lg border border-bastion-line bg-bastion-surface p-0.5" role="tablist">
-          {[["rules", "Human rules", BookOpen], ["json", "BrandManifest.json", FileJson]].map(([id, label, Icon]) => (
+    <aside className="flex min-h-0 flex-col border-b border-slate-800/90 bg-[#0B101B] lg:border-b-0 lg:border-r select-none">
+      <div className="p-3.5 border-b border-slate-800/80 space-y-2.5">
+        <div className="grid grid-cols-3 gap-1 rounded-lg bg-slate-900/90 p-1 border border-slate-800/90 text-xs">
+          {[
+            ["rules", "Rules", BookOpen],
+            ["rag", `RAG (${ragChunks.length})`, Database],
+            ["json", "JSON", FileJson],
+          ].map(([id, label, Icon]) => (
             <button
-              key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
-              className={`flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs ${tab === id ? "bg-bastion-bg text-bastion-text" : "text-bastion-muted hover:text-bastion-text"}`}
+              key={id}
+              onClick={() => setTab(id)}
+              className={`flex items-center justify-center gap-1.5 rounded-md py-1.5 font-medium transition-colors ${
+                tab === id ? "bg-slate-800 text-white shadow-sm" : "text-slate-400 hover:text-slate-200"
+              }`}
             >
-              <Icon className="h-3.5 w-3.5" />
-              {label}
+              <Icon className="w-3.5 h-3.5" />
+              <span>{label}</span>
             </button>
           ))}
         </div>
+
+        {tab === "rules" && (
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter rules, terms, facts..."
+              className="w-full bg-slate-900/80 border border-slate-800 focus:border-indigo-500 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none"
+            />
+          </div>
+        )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-5">
         {tab === "json" ? (
-          <div className="relative px-4 pb-4">
-            <button onClick={copy} className="absolute right-6 top-2 flex items-center gap-1 rounded-md border border-bastion-line bg-bastion-surface px-2 py-1 text-xs text-bastion-muted hover:text-bastion-text">
-              {copied ? <Check className="h-3 w-3 text-bastion-ok" /> : <Copy className="h-3 w-3" />}
+          <div className="relative">
+            <button
+              onClick={copyJson}
+              className="absolute right-2.5 top-2.5 flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-slate-300 hover:text-white"
+            >
+              {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
               {copied ? "Copied" : "Copy"}
             </button>
-            <pre className="max-h-[70vh] overflow-auto rounded-lg border border-bastion-line bg-bastion-surface p-3 pt-9 font-mono text-[11px] leading-relaxed text-slate-300">{json}</pre>
+            <pre className="rounded-xl border border-slate-800 bg-slate-950/90 p-3.5 pt-10 font-mono text-[11px] leading-relaxed text-slate-300 overflow-x-auto select-text">
+              {json}
+            </pre>
+          </div>
+        ) : tab === "rag" ? (
+          <div className="space-y-3">
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Indexed passages extracted from the uploaded brand book PDF.
+            </p>
+            {ragChunks.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-800 p-5 text-center text-xs text-slate-500 leading-relaxed">
+                No custom PDF uploaded yet. Click <strong className="text-slate-300">Ingest PDF</strong> in the top bar to index a brand book.
+              </div>
+            ) : (
+              ragChunks.map((chunk, i) => (
+                <div
+                  key={chunk.chunk_id || i}
+                  className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between text-[11px] font-mono text-indigo-300">
+                    <span>{chunk.chunk_id || `RAG-${i + 1}`}</span>
+                    <span className="text-slate-500">Page {chunk.page || 1}</span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">{chunk.text}</p>
+                </div>
+              ))
+            )}
           </div>
         ) : (
           <>
-            <Section title="Voice">
-              <ul className="space-y-3">
-                {tone.map((r) => (
-                  <li key={r.rule_id}>
-                    <div className="flex items-center gap-2"><RuleBadge id={r.rule_id} /><span className="text-sm">{r.name}</span></div>
-                    <p className="mt-1 text-xs leading-relaxed text-bastion-muted">{r.description}</p>
-                  </li>
-                ))}
-              </ul>
-            </Section>
-
-            <Section title="Banned terms">
-              <ul className="space-y-2.5">
-                {manifest.banned_terms.map((t) => (
-                  <li key={t.rule_id} className="text-xs">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <RuleBadge id={t.rule_id} />
-                      <span className="rounded bg-bastion-danger/10 px-1.5 py-0.5 text-red-300 line-through decoration-bastion-danger/60">{t.term}</span>
-                      <span className="text-bastion-muted">becomes</span>
-                      <span className="rounded bg-bastion-ok/10 px-1.5 py-0.5 text-emerald-300">{t.replacement}</span>
-                    </div>
-                    <div className="mt-1 text-bastion-muted">{SEVERITY[t.severity]?.label} · {t.citation}</div>
-                  </li>
-                ))}
-              </ul>
-            </Section>
-
-            <Section title="Required disclaimers">
-              <ul className="space-y-3">
-                {disclaimers.map((d) => (
-                  <li key={d.rule_id} className="text-xs">
-                    <div className="flex items-center gap-2"><RuleBadge id={d.rule_id} /><span className="text-bastion-muted">{d.citation}</span></div>
-                    <p className="mt-1 leading-relaxed">“{d.required_text}”</p>
-                  </li>
-                ))}
-              </ul>
-            </Section>
-
-            <Section title="Approved palette">
-              <div className="flex gap-2">
-                {manifest.approved_hex_palette.map((hex) => (
-                  <div key={hex} className="text-center">
-                    <div className="h-8 w-8 rounded-md ring-1 ring-inset ring-white/15" style={{ background: hex }} title={hex} />
-                    <div className="mt-1 font-mono text-[9px] text-bastion-muted">{hex.slice(1)}</div>
+            <section>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-medium text-slate-400">Approved Palette</h3>
+                <span className="font-mono text-[11px] text-slate-500">≥ {manifest.wcag_min_ratio}:1</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {(manifest.approved_hex_palette || []).map((hex) => (
+                  <div key={hex} className="flex-1 text-center">
+                    <div
+                      className="h-7 w-full rounded-lg ring-1 ring-inset ring-white/10"
+                      style={{ background: hex }}
+                      title={hex}
+                    />
+                    <span className="mt-1 block font-mono text-[9px] text-slate-500">{hex}</span>
                   </div>
                 ))}
               </div>
-              <p className="mt-2 text-xs text-bastion-muted">Text needs a {manifest.wcag_min_ratio}:1 contrast ratio.</p>
-            </Section>
+            </section>
 
-            <Section title="Approved fact ledger">
-              <ul className="space-y-3">
-                {manifest.fact_ledger.map((f) => {
+            <section className="pt-4 border-t border-slate-800/80">
+              <h3 className="text-xs font-medium text-slate-400 mb-2.5">Fact Ledger ({facts.length})</h3>
+              <ul className="space-y-2">
+                {facts.map((f) => {
                   const d = daysUntil(f.expires_at);
-                  const expired = d !== null && d < 0;
                   const soon = d !== null && d >= 0 && d <= 60;
                   return (
-                    <li key={f.claim_id} className="text-xs">
-                      <div className="flex items-center justify-between gap-2">
-                        <RuleBadge id={f.claim_id} />
-                        <span className={`rounded px-1.5 py-0.5 ${expired ? "bg-bastion-danger/15 text-red-300" : soon ? "bg-bastion-amber/15 text-amber-300" : "text-bastion-muted"}`}>
-                          {expired ? "Expired" : soon ? `Expires in ${d} days` : `Valid to ${f.expires_at}`}
+                    <li
+                      key={f.claim_id}
+                      className="rounded-xl border border-slate-800/90 bg-slate-900/50 p-2.5 text-xs space-y-1"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[11px] text-emerald-400 font-medium">{f.claim_id}</span>
+                        <span className={`text-[10px] font-mono ${soon ? "text-amber-400" : "text-slate-500"}`}>
+                          {soon ? `Exp ${d}d` : f.expires_at}
                         </span>
                       </div>
-                      <p className="mt-1 leading-relaxed">{f.approved_statement}</p>
-                      <p className="mt-0.5 text-bastion-muted">{f.source_citation}</p>
+                      <p className="text-slate-200 leading-relaxed">{f.approved_statement}</p>
                     </li>
                   );
                 })}
               </ul>
-            </Section>
+            </section>
 
-            {clarifications.length > 0 && (
-              <Section title="Merged guideline clarifications">
-                <ul className="space-y-2 text-xs">
-                  {clarifications.map((c) => (
-                    <li key={c.rule_id}><RuleBadge id={c.rule_id} /><p className="mt-1 text-bastion-muted">{c.description}</p></li>
-                  ))}
-                </ul>
-              </Section>
-            )}
+            <section className="pt-4 border-t border-slate-800/80">
+              <h3 className="text-xs font-medium text-slate-400 mb-2.5">Prohibited Lexicon ({terms.length})</h3>
+              <ul className="space-y-2">
+                {terms.map((t) => (
+                  <li
+                    key={t.rule_id}
+                    className="rounded-xl border border-slate-800/90 bg-slate-900/50 p-2.5 text-xs space-y-1"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-[11px] text-slate-400">{t.rule_id}</span>
+                      {t.amendments?.length > 0 && (
+                        <span className="text-[10px] font-mono text-indigo-300 bg-indigo-500/15 px-1.5 py-0.5 rounded">
+                          PR Merged
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-red-300 line-through">{t.term}</span>
+                      <span className="text-slate-500">→</span>
+                      <span className="text-emerald-300">{t.replacement}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="pt-4 border-t border-slate-800/80">
+              <h3 className="text-xs font-medium text-slate-400 mb-2.5">
+                Voice & Disclaimers ({tone.length + disclaimers.length + clarifications.length})
+              </h3>
+              <ul className="space-y-2">
+                {[...tone, ...disclaimers, ...clarifications].map((r) => (
+                  <li
+                    key={r.rule_id}
+                    className="rounded-xl border border-slate-800/90 bg-slate-900/50 p-2.5 text-xs space-y-1"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-[11px] text-indigo-300">{r.rule_id}</span>
+                      <span className="text-[11px] text-slate-300 font-medium truncate">
+                        {r.name || "Legal Disclaimer"}
+                      </span>
+                    </div>
+                    <p className="text-slate-400 leading-relaxed">{r.description || r.required_text}</p>
+                  </li>
+                ))}
+              </ul>
+            </section>
           </>
         )}
       </div>

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
-import { Loader2, Play, ImagePlus, X } from "lucide-react";
+import { Loader2, Play, ImagePlus, X, Lock, ArrowLeftRight } from "lucide-react";
 import { SEVERITY, contrastRatio, floor2, hexToRgb, wcagLevel } from "../lib.js";
 
 function buildSegments(text, flags) {
@@ -28,158 +28,287 @@ function buildSegments(text, flags) {
   return segs;
 }
 
-function ColorField({ label, value, onChange, palette }) {
+function ColorPicker({ label, value, onChange, palette }) {
   const valid = !!hexToRgb(value);
-  const picker = valid ? "#" + hexToRgb(value).map((n) => n.toString(16).padStart(2, "0")).join("") : "#000000";
+  const picker = valid
+    ? "#" + hexToRgb(value).map((n) => n.toString(16).padStart(2, "0")).join("")
+    : "#000000";
+
   return (
-    <div>
-      <label className="mb-1.5 block text-xs text-bastion-muted">{label}</label>
-      <div className="flex items-center gap-2">
-        <input
-          type="color" value={picker} onChange={(e) => onChange(e.target.value.toUpperCase())}
-          className="h-9 w-9 cursor-pointer rounded-md border border-bastion-line bg-transparent p-0.5" aria-label={`${label} color picker`}
-        />
-        <input
-          value={value} onChange={(e) => onChange(e.target.value)} spellCheck={false} aria-label={`${label} hex value`}
-          className={`w-28 rounded-md border bg-bastion-bg px-2.5 py-1.5 font-mono text-sm ${valid ? "border-bastion-line" : "border-bastion-danger"}`}
-        />
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-slate-400">{label}</span>
         <div className="flex gap-1">
           {palette.map((hex) => (
-            <button key={hex} onClick={() => onChange(hex)} title={`Use ${hex}`} aria-label={`Use ${hex}`}
-              className="h-6 w-6 rounded ring-1 ring-inset ring-white/20 hover:scale-110" style={{ background: hex }} />
+            <button
+              key={hex}
+              type="button"
+              onClick={() => onChange(hex)}
+              title={`Use ${hex}`}
+              className="h-4 w-4 rounded ring-1 ring-inset ring-white/20 hover:scale-110 transition-transform"
+              style={{ background: hex }}
+            />
           ))}
         </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={picker}
+          onChange={(e) => onChange(e.target.value.toUpperCase())}
+          className="h-8 w-8 cursor-pointer rounded-lg border border-slate-800 bg-transparent p-0.5"
+        />
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          spellCheck={false}
+          className={`w-full rounded-lg border bg-slate-950 px-2.5 py-1.5 font-mono text-xs ${
+            valid ? "border-slate-800 text-slate-200" : "border-red-500 text-red-300"
+          }`}
+        />
       </div>
     </div>
   );
 }
 
 export default function DraftCanvas({
-  presets, activePreset, onPreset, draft, onDraft, flags, activeFlagId,
-  fg, bg, onFg, onBg, hasAlt, onHasAlt, altText, onAltText, altRef,
-  imageName, onImage, onClearImage, palette, minRatio, onRun, loading, dirty, hasResult,
+  presets,
+  activePreset,
+  onPreset,
+  draft,
+  onDraft,
+  flags,
+  activeFlagId,
+  fg,
+  bg,
+  onFg,
+  onBg,
+  hasAlt,
+  onHasAlt,
+  altText,
+  onAltText,
+  altRef,
+  imageName,
+  onImage,
+  onClearImage,
+  palette,
+  minRatio,
+  onRun,
+  loading,
+  dirty,
+  hasResult,
+  isSessionLocked,
 }) {
   const taRef = useRef(null);
+  const backdropRef = useRef(null);
   const segments = useMemo(() => buildSegments(draft, flags), [draft, flags]);
 
   useLayoutEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    ta.style.height = `${Math.max(ta.scrollHeight, 220)}px`;
+    ta.style.height = `${Math.max(ta.scrollHeight, 200)}px`;
   }, [draft]);
+
+  const handleScroll = () => {
+    if (taRef.current && backdropRef.current) {
+      backdropRef.current.scrollTop = taRef.current.scrollTop;
+    }
+  };
 
   const raw = contrastRatio(fg, bg);
   const ratio = raw === null ? null : floor2(raw);
   const level = wcagLevel(raw);
-  const preset = presets.find((p) => p.id === activePreset);
-  const previewText = (draft.split(/\n|(?<=[.!?])\s/)[0] || "Your headline appears here").slice(0, 90);
+  const previewText = (draft.split(/\n|(?<=[.!?])\s/)[0] || "Campaign headline preview").slice(0, 95);
   const validColors = raw !== null;
 
   return (
-    <section className="flex min-h-0 flex-col overflow-y-auto" aria-label="Draft canvas">
-      <div className="border-b border-bastion-line px-4 py-4 lg:px-6">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="mr-1 text-sm text-bastion-muted">Sample drafts</span>
+    <section className="flex min-h-0 flex-col overflow-y-auto bg-[#090D16]" aria-label="Draft workspace">
+      <div className="px-5 py-3 border-b border-slate-800/80 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-1 flex-wrap">
           {presets.map((p) => (
             <button
-              key={p.id} onClick={() => onPreset(p)}
-              className={`rounded-full border px-3 py-1 text-xs transition-colors ${activePreset === p.id ? "border-bastion-accent bg-bastion-accent/20 text-bastion-text" : "border-bastion-line text-bastion-muted hover:border-slate-500 hover:text-bastion-text"}`}
+              key={p.id}
+              onClick={() => onPreset(p)}
+              className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
+                activePreset === p.id
+                  ? "bg-slate-800 text-white"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+              }`}
             >
               {p.label}
             </button>
           ))}
         </div>
-        {preset && <p className="mt-2 max-w-2xl text-xs leading-relaxed text-bastion-muted">{preset.description}</p>}
+
+        <div className="flex items-center gap-3">
+          {dirty && hasResult && <span className="text-xs text-amber-400">Unsaved edits</span>}
+          <button
+            onClick={onRun}
+            disabled={loading || !draft.trim()}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors cursor-pointer"
+          >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+            <span>{loading ? "Auditing..." : "Run Audit"}</span>
+          </button>
+        </div>
       </div>
 
-      <div className="px-4 py-5 lg:px-6">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-medium">Draft copy</h2>
-          <div className="flex items-center gap-3">
-            {dirty && hasResult && <span className="text-xs text-amber-300">Edited since the last review</span>}
-            <button
-              onClick={onRun} disabled={loading || !draft.trim()}
-              className="flex items-center gap-1.5 rounded-md bg-bastion-accent px-3.5 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-              {loading ? "Reviewing" : "Run review"}
-            </button>
+      <div className="p-5 lg:p-6 space-y-6 max-w-4xl w-full mx-auto">
+        {isSessionLocked && (
+          <div className="flex items-center gap-2.5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-200">
+            <Lock className="w-4 h-4 text-red-400 shrink-0" />
+            <span>
+              <strong>Session Locked (LEGAL_HOLD):</strong> Direct editing is frozen for Creators while critical legal flags are open. Accept surgical fixes or switch role to <strong>Legal Reviewer</strong>.
+            </span>
           </div>
-        </div>
+        )}
 
-        <div className="relative rounded-xl border border-bastion-line bg-bastion-surface focus-within:border-indigo-400">
-          <div aria-hidden="true" className="canvas-type pointer-events-none absolute inset-0 text-transparent">
-            {segments.map((s, i) =>
-              s.sev ? (
-                <mark key={i} className={`${SEVERITY[s.sev].mark} ${s.id === activeFlagId ? "hl-active" : ""} text-transparent`}>{s.text}</mark>
-              ) : (
-                <span key={i}>{s.text}</span>
-              )
-            )}
-            {"\u200b"}
-          </div>
-          <textarea
-            ref={taRef} value={draft} onChange={(e) => onDraft(e.target.value)} spellCheck={false} rows={8}
-            aria-label="Draft copy to review" placeholder="Paste marketing copy to review against the brand manifest."
-            className="canvas-type relative block w-full resize-none overflow-hidden border-0 bg-transparent text-bastion-text caret-white outline-none placeholder:text-slate-500 focus-visible:outline-none"
-          />
-        </div>
-        <p className="mt-2 text-xs text-bastion-muted">
-          Highlights show open flags by severity. Hover a flag in the right rail to find it here.
-        </p>
-      </div>
-
-      <div className="border-t border-bastion-line px-4 py-5 lg:px-6">
-        <h2 className="mb-3 text-sm font-medium">Banner contrast</h2>
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <div className="space-y-4">
-            <ColorField label="Text color" value={fg} onChange={onFg} palette={palette} />
-            <ColorField label="Background color" value={bg} onChange={onBg} palette={palette} />
-            <div className="space-y-2 pt-1">
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={hasAlt} onChange={(e) => onHasAlt(e.target.checked)} className="h-4 w-4 accent-indigo-500" />
-                Banner has alt text
-              </label>
-              <input
-                ref={altRef} value={altText} onChange={(e) => onAltText(e.target.value)} disabled={!hasAlt}
-                placeholder="Describe what the banner shows" aria-label="Alt text"
-                className="w-full rounded-md border border-bastion-line bg-bastion-bg px-2.5 py-1.5 text-sm disabled:opacity-40"
-              />
-              <div className="flex items-center gap-2">
-                <label className="flex cursor-pointer items-center gap-1.5 rounded-md border border-bastion-line px-2.5 py-1.5 text-xs text-bastion-muted hover:text-bastion-text">
-                  <ImagePlus className="h-3.5 w-3.5" />
-                  Attach banner image
-                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" onChange={onImage} />
-                </label>
-                {imageName && (
-                  <span className="flex items-center gap-1 text-xs text-bastion-muted">
-                    {imageName}
-                    <button onClick={onClearImage} aria-label="Remove image" className="rounded p-0.5 hover:text-bastion-text"><X className="h-3 w-3" /></button>
-                  </span>
-                )}
-              </div>
-            </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span className="font-medium text-slate-300">Campaign Copy</span>
+            <span className="font-mono text-[11px]">{draft.length} chars</span>
           </div>
 
-          <div>
+          <div className="relative rounded-2xl border border-slate-800 bg-slate-900/50 focus-within:border-indigo-500/70 transition-colors">
             <div
-              className="flex min-h-[132px] items-center rounded-xl px-6 py-5 ring-1 ring-inset ring-white/10"
-              style={{ background: validColors ? bg : "#1E293B", color: validColors ? fg : "#94A3B8" }}
+              ref={backdropRef}
+              aria-hidden="true"
+              className="canvas-type pointer-events-none absolute inset-0 overflow-hidden text-transparent"
             >
-              <p className="text-xl font-semibold leading-snug tracking-tight">{previewText}</p>
+              {segments.map((s, i) =>
+                s.sev ? (
+                  <mark
+                    key={i}
+                    className={`${SEVERITY[s.sev].mark} ${s.id === activeFlagId ? "hl-active" : ""} text-transparent`}
+                  >
+                    {s.text}
+                  </mark>
+                ) : (
+                  <span key={i}>{s.text}</span>
+                )
+              )}
+              {"\u200b"}
             </div>
-            <div className="mt-3 flex items-center gap-3">
-              <div className="font-mono text-2xl tabular-nums">{ratio === null ? "—" : ratio.toFixed(2)}<span className="text-sm text-bastion-muted"> : 1</span></div>
-              <div className="flex flex-wrap gap-1.5 text-xs">
-                <span className={`rounded px-2 py-0.5 ${ratio !== null && ratio >= minRatio ? "bg-bastion-ok/15 text-emerald-300" : "bg-bastion-danger/15 text-red-300"}`}>
-                  Body text {ratio !== null && ratio >= minRatio ? "passes" : "fails"} {minRatio}:1
-                </span>
-                <span className={`rounded px-2 py-0.5 ${level === "AAA" ? "bg-bastion-ok/15 text-emerald-300" : "bg-slate-500/15 text-slate-300"}`}>AAA 7:1 {level === "AAA" ? "passes" : "not met"}</span>
-                <span className={`rounded px-2 py-0.5 ${ratio !== null && ratio >= 3 ? "bg-bastion-ok/15 text-emerald-300" : "bg-bastion-danger/15 text-red-300"}`}>Large text 3:1 {ratio !== null && ratio >= 3 ? "passes" : "fails"}</span>
+
+            <textarea
+              ref={taRef}
+              value={draft}
+              readOnly={isSessionLocked}
+              onScroll={handleScroll}
+              onChange={(e) => onDraft(e.target.value)}
+              spellCheck={false}
+              rows={7}
+              placeholder="Write or paste marketing copy..."
+              className="canvas-type relative block w-full resize-none overflow-hidden border-0 bg-transparent text-slate-100 caret-white outline-none placeholder:text-slate-600 focus-visible:outline-none"
+            />
+          </div>
+        </div>
+
+        {/* Visual & WCAG Contrast Proofing */}
+        <div className="space-y-3 pt-1">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-300">Visual & WCAG Contrast</span>
+            <div className="flex items-center gap-2 font-mono text-xs">
+              <span className="text-slate-200 font-semibold">
+                {ratio === null ? "—" : `${ratio.toFixed(2)}:1`}
+              </span>
+              <span
+                className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${
+                  ratio !== null && ratio >= minRatio
+                    ? "bg-emerald-500/15 text-emerald-300"
+                    : "bg-red-500/15 text-red-300"
+                }`}
+              >
+                {level === "FAIL" ? `FAIL (<${minRatio}:1)` : `WCAG ${level}`}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+            <div
+              className="flex flex-col justify-between min-h-[156px] rounded-xl p-5 ring-1 ring-inset ring-white/10 transition-colors"
+              style={{
+                background: validColors ? bg : "#1E293B",
+                color: validColors ? fg : "#94A3B8",
+              }}
+            >
+              <div className="flex items-center justify-between text-[10px] font-mono opacity-75">
+                <span>BANNER PREVIEW</span>
+                <span>{fg} / {bg}</span>
+              </div>
+              <p className="text-base font-semibold leading-snug tracking-tight my-3">
+                {previewText}
+              </p>
+              <div className="text-[10px] font-mono opacity-75 truncate">
+                Alt: {hasAlt && altText ? altText : "[missing]"}
               </div>
             </div>
-            {!validColors && <p className="mt-2 text-xs text-red-300">Enter colors as #RRGGBB to calculate contrast.</p>}
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-2.5">
+                <ColorPicker label="Text Color" value={fg} onChange={onFg} palette={palette} />
+                <ColorPicker label="Background" value={bg} onChange={onBg} palette={palette} />
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const prevFg = fg;
+                    onFg(bg);
+                    onBg(prevFg);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white"
+                >
+                  <ArrowLeftRight className="w-3 h-3" />
+                  <span>Swap Colors</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1 text-[11px] text-slate-300 hover:text-white">
+                    <ImagePlus className="h-3 w-3" />
+                    <span>{imageName ? "Change Image" : "Upload Banner"}</span>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      className="sr-only"
+                      onChange={onImage}
+                    />
+                  </label>
+                  {imageName && (
+                    <button
+                      type="button"
+                      onClick={onClearImage}
+                      aria-label="Remove image"
+                      className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={hasAlt}
+                    onChange={(e) => onHasAlt(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-indigo-500 rounded"
+                  />
+                  <span>Include screen-reader alt text</span>
+                </label>
+                <input
+                  ref={altRef}
+                  value={altText}
+                  onChange={(e) => onAltText(e.target.value)}
+                  disabled={!hasAlt}
+                  placeholder="Describe the visual asset..."
+                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200 disabled:opacity-40 focus:border-indigo-500 focus:outline-none"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>

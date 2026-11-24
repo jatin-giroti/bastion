@@ -8,6 +8,9 @@ Endpoints
   POST /api/v1/flags/{submission_id}/accept      (extra: persists accepted fixes)
   POST /api/v1/manifest/{brand_id}/accept-pr
   GET  /api/v1/health
+  GET  /api/v1/manifests                         (Round 3: list brands)
+  POST /api/v1/manifests/ingest-pdf              (Round 3: compile a brand PDF into a manifest + RAG chunks)
+  POST /api/v1/webhooks/test                     (Round 3: send a Slack/Teams test event)
 
 Storage: MongoDB Atlas via Motor (database `bastion_db`) when MONGODB_URI is set,
 otherwise an automatic in-memory fallback so the app always runs.
@@ -21,7 +24,7 @@ import uuid
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -29,6 +32,7 @@ load_dotenv()
 
 from agents import generate_guideline_pr, get_client, merge_clarification_into_manifest, run_triad  # noqa: E402
 from deterministic import run_deterministic_text_checks, run_deterministic_wcag_checks  # noqa: E402
+from ingestion import compile_manifest_from_pdf, send_governance_webhook  # noqa: E402
 from models import (  # noqa: E402
     DEFAULT_BRAND_MANIFEST,
     MANIFEST_CACHE,
@@ -185,6 +189,33 @@ class Store:
 store = Store()
 _pr_lock = asyncio.Lock()  # serialises override -> count -> PR so the PR is created exactly once
 
+# RAG chunks per brand (kept beside, not inside, the validated BrandManifest)
+RAG_CHUNKS_STORE: dict[str, list[dict]] = {}
+MAX_PDF_BYTES = 15 * 1024 * 1024
+
+_BG_TASKS: set = set()
+
+
+def _fire_webhook(event_type: str, payload: dict) -> None:
+    """Send a governance webhook in the background so Slack/Teams latency never delays an API response."""
+
+    async def _run() -> None:
+        try:
+            result = await send_governance_webhook(event_type, payload)
+            if result.get("sent"):
+                logger.info("Governance webhook '%s' delivered", event_type)
+            elif result.get("reason") != "no_webhook_configured":
+                logger.warning("Governance webhook '%s' not delivered: %s", event_type, result)
+        except Exception as exc:  # never let a notification break governance
+            logger.warning("Governance webhook '%s' crashed: %s", event_type, exc)
+
+    try:
+        task = asyncio.get_running_loop().create_task(_run())
+    except RuntimeError:
+        return
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
+
 
 # -----------------------------------------------------------------------------
 # Manifest access (in-memory cache first, store second)
@@ -197,7 +228,10 @@ async def load_manifest(brand_id: str) -> dict | None:
     if doc is None:
         return None
     try:
-        return set_cached_manifest(brand_id, doc)
+        validated = set_cached_manifest(brand_id, doc)
+        if doc.get("rag_chunks"):
+            RAG_CHUNKS_STORE[brand_id] = doc["rag_chunks"]
+        return validated
     except Exception as exc:
         logger.error("Stored manifest for %s is invalid: %s", brand_id, exc)
         return None
@@ -209,6 +243,8 @@ async def lifespan(_: FastAPI):
     for doc in await store.find("brand_manifests", {}):
         try:
             set_cached_manifest(doc["brand_id"], doc)
+            if doc.get("rag_chunks"):
+                RAG_CHUNKS_STORE[doc["brand_id"]] = doc["rag_chunks"]
         except Exception as exc:
             logger.warning("Skipping invalid stored manifest: %s", exc)
     default_id = DEFAULT_BRAND_MANIFEST["brand_id"]
@@ -272,7 +308,78 @@ async def get_manifest(brand_id: str):
     manifest = await load_manifest(brand_id)
     if manifest is None:
         raise HTTPException(status_code=404, detail=f"No BrandManifest for brand_id '{brand_id}'")
-    return manifest
+    return {**manifest, "rag_chunks": RAG_CHUNKS_STORE.get(brand_id, [])}
+
+
+@app.get("/api/v1/manifests")
+async def list_manifests():
+    brands = [
+        {
+            "brand_id": brand_id,
+            "brand_name": m.get("brand_name", brand_id),
+            "version": m.get("version"),
+            "rag_chunk_count": len(RAG_CHUNKS_STORE.get(brand_id, [])),
+        }
+        for brand_id, m in MANIFEST_CACHE.items()
+    ]
+    return {"manifests": sorted(brands, key=lambda b: str(b["brand_name"]).lower())}
+
+
+@app.post("/api/v1/manifests/ingest-pdf")
+async def ingest_pdf(brand_name: str = Form(...), file: UploadFile = File(...)):
+    name = brand_name.strip()
+    if not name or len(name) > 80:
+        raise HTTPException(status_code=422, detail="brand_name must be between 1 and 80 characters.")
+    data = await file.read(MAX_PDF_BYTES + 1)
+    if len(data) > MAX_PDF_BYTES:
+        raise HTTPException(status_code=413, detail="PDF is larger than the 15 MB limit.")
+    if b"%PDF-" not in data[:1024]:
+        raise HTTPException(status_code=415, detail="The uploaded file is not a PDF.")
+
+    try:
+        compiled = await compile_manifest_from_pdf(name, data)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        logger.exception("PDF ingestion failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not compile this PDF into a manifest.")
+
+    rag_chunks = compiled.pop("rag_chunks", [])
+    compiled_by = compiled.pop("compiled_by", "heuristic")
+    try:
+        validated = set_cached_manifest(compiled["brand_id"], compiled)
+    except Exception as exc:
+        logger.error("Compiled manifest failed validation: %s", exc)
+        raise HTTPException(status_code=422, detail="The compiled manifest did not pass validation.")
+
+    RAG_CHUNKS_STORE[validated["brand_id"]] = rag_chunks
+    await store.upsert("brand_manifests", {"brand_id": validated["brand_id"]}, {**validated, "rag_chunks": rag_chunks})
+    return {**validated, "rag_chunks": rag_chunks, "compiled_by": compiled_by}
+
+
+class WebhookTestRequest(BaseModel):
+    webhook_url: str | None = None
+    event_type: str = "test"
+    brand_id: str
+
+
+@app.post("/api/v1/webhooks/test")
+async def webhooks_test(req: WebhookTestRequest):
+    manifest = await load_manifest(req.brand_id)
+    if manifest is None:
+        raise HTTPException(status_code=404, detail=f"No BrandManifest for brand_id '{req.brand_id}'")
+    base = {"brand_id": req.brand_id, "brand_name": manifest.get("brand_name", req.brand_id)}
+    if req.event_type == "legal_hold":
+        payload = {**base, "submission_id": "sub_test", "status": "LEGAL_HOLD", "compliance_score": 0, "critical_flag_count": 2,
+                   "critical_flags": [{"rule_id": "TERM-03", "exact_quote": "risk-free"},
+                                      {"rule_id": "TERM-02", "exact_quote": "100% guaranteed ROI"}]}
+    elif req.event_type == "guideline_pr":
+        payload = {**base, "rule_id": "TERM-06", "override_count": 3, "pr_id": "PR-TEST0001",
+                   "rationale": "Sample guideline PR generated by the webhook test."}
+    else:
+        payload = base
+    result = await send_governance_webhook(req.event_type, payload, req.webhook_url)
+    return {"event_type": req.event_type, "brand_id": req.brand_id, **result}
 
 
 @app.post("/api/v1/review/{brand_id}")
@@ -330,6 +437,14 @@ async def review(brand_id: str, req: AuditRequest):
             await store.insert("audit_flags", {**f.model_dump(), "submission_id": submission_id, "brand_id": brand_id})
     except Exception as exc:  # pragma: no cover
         logger.error("Failed to persist submission %s: %s", submission_id, exc)
+
+    if status == "LEGAL_HOLD":
+        critical = [f for f in flags if f.severity == "CRITICAL_LEGAL" and f.status == "OPEN"]
+        _fire_webhook("legal_hold", {
+            "brand_id": brand_id, "brand_name": manifest.get("brand_name", brand_id), "submission_id": submission_id,
+            "status": status, "compliance_score": score, "critical_flag_count": len(critical),
+            "critical_flags": [{"rule_id": f.rule_id, "exact_quote": f.exact_quote} for f in critical[:5]],
+        })
 
     payload = response.model_dump(mode="json")
     payload["triad"] = {"mode": triad["mode"], "agents": triad["agents"]}
@@ -394,6 +509,13 @@ async def override_flag(submission_id: str, req: OverrideRequest):
                 })
                 pr_created = True
 
+    if pr_created and pr:
+        _fire_webhook("guideline_pr", {
+            "brand_id": brand_id, "brand_name": (get_cached_manifest(brand_id) or {}).get("brand_name", brand_id),
+            "rule_id": flag.rule_id, "override_count": count, "pr_id": pr.get("pr_id"),
+            "rationale": pr.get("rationale", ""), "sample_reasons": pr.get("sample_reasons", []),
+        })
+
     status, score = await _refresh_submission(submission_id)
     return {
         "flag": {**flag.model_dump(), "status": "OVERRIDDEN"},
@@ -448,7 +570,8 @@ async def accept_pr(brand_id: str, req: AcceptPRRequest):
     now = utc_now_iso()
     merged = merge_clarification_into_manifest(base, pr, now)  # bumps version + updated_at
     validated = set_cached_manifest(brand_id, merged)          # refreshes MANIFEST_CACHE (and recompiles regex keys)
-    await store.upsert("brand_manifests", {"brand_id": brand_id}, validated)
+    await store.upsert("brand_manifests", {"brand_id": brand_id},
+                       {**validated, "rag_chunks": RAG_CHUNKS_STORE.get(brand_id, [])})
 
     await store.update("governance_telemetry", pr_q, {"status": "ACCEPTED", "accepted_at": now, "accepted_by": req.reviewer_role})
     await store.update_many(

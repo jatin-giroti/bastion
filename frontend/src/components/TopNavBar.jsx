@@ -1,79 +1,165 @@
-import { Zap, Wifi, WifiOff, Loader2 } from "lucide-react";
+import { Zap, FileUp, Bell, Globe, ChevronDown, Lock, HelpCircle } from "lucide-react";
 import { ROLES, STATUS_STYLES } from "../lib.js";
 
-function ScoreGauge({ score }) {
-  const r = 18;
-  const c = 2 * Math.PI * r;
-  const has = score !== null;
-  const pct = has ? score / 100 : 0;
-  const color = !has ? "#334155" : score >= 85 ? "#10B981" : score >= 60 ? "#F59E0B" : "#EF4444";
-  return (
-    <div className="flex items-center gap-3" role="img" aria-label={has ? `Compliance score ${score} out of 100` : "No compliance score yet"}>
-      <svg width="48" height="48" viewBox="0 0 48 48" className="-rotate-90">
-        <circle cx="24" cy="24" r={r} fill="none" stroke="#334155" strokeWidth="4" />
-        <circle
-          cx="24" cy="24" r={r} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"
-          strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
-          style={{ transition: "stroke-dashoffset 500ms ease, stroke 300ms ease" }}
-        />
-      </svg>
-      <div className="-ml-[60px] flex h-12 w-12 items-center justify-center font-mono text-sm font-medium text-bastion-text">
-        {has ? score : "–"}
-      </div>
-      <div className="leading-tight">
-        <div className="text-sm font-medium">Compliance score</div>
-        <div className="text-xs text-bastion-muted">Open flags only</div>
-      </div>
-    </div>
-  );
-}
-
-export default function TopNavBar({ preflightMs, totalMs, score, status, role, onRole, online, onRetry, triadMode, loading }) {
+export default function TopNavBar({
+  brands,
+  activeBrandId,
+  onSelectBrand,
+  preflightMs,
+  score,
+  status,
+  role,
+  onRole,
+  online,
+  onRetry,
+  onOpenPdfModal,
+  onOpenWebhookModal,
+  onOpenLinterModal,
+  onOpenTour,
+  webhookCount,
+  isSessionLocked,
+  highlightTour = false,
+}) {
   const st = STATUS_STYLES[status] || STATUS_STYLES.DRAFT;
-  const within = preflightMs !== null && preflightMs < 10;
-  const triadLabel = triadMode === "claude-live" ? "Claude triad live" : triadMode === "mixed" ? "Claude triad partial" : triadMode ? "Rules fallback" : "Triad idle";
+  const scoreColor =
+    score === null
+      ? "text-slate-400"
+      : score >= 85
+      ? "text-emerald-400"
+      : score >= 60
+      ? "text-amber-400"
+      : "text-red-400";
+
   return (
-    <header className="border-b border-bastion-line bg-bastion-bg/95 backdrop-blur">
-      <div className="flex flex-wrap items-center gap-x-8 gap-y-3 px-4 py-3 lg:px-6">
-        <div className="flex items-center gap-2.5">
-          <img src="/logo.svg" alt="" className="h-7 w-7" />
-          <div className="leading-tight">
-            <div className="text-[15px] font-semibold tracking-tight">Bastion</div>
-            <div className="text-xs text-bastion-muted">Brand-as-code governance</div>
-          </div>
+    <header
+      className={`h-14 shrink-0 border-b border-slate-800/90 bg-[#090D16]/95 backdrop-blur px-4 lg:px-5 flex items-center justify-between gap-3 select-none transition-shadow ${
+        highlightTour ? "ring-2 ring-inset ring-indigo-500/70" : ""
+      }`}
+    >
+      {/* Left: Brand Logo, Brand Switcher & Round 3 Quick Actions */}
+      <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-2 shrink-0">
+          <img src="/logo.svg" alt="Bastion" className="h-6 w-6" />
+          <span className="text-[15px] font-semibold tracking-tight text-slate-100">
+            Bastion
+          </span>
         </div>
 
-        <div className="flex items-center gap-2 rounded-lg border border-bastion-line bg-bastion-surface px-3 py-1.5" title="Deterministic regex, hex and WCAG checks. No LLM call.">
-          {loading ? <Loader2 className="h-4 w-4 animate-spin text-bastion-muted" /> : <Zap className={`h-4 w-4 ${within ? "text-bastion-ok" : "text-bastion-muted"}`} />}
-          <span className="text-sm text-bastion-muted">Pre-flight</span>
-          <span className="font-mono text-sm">{preflightMs === null ? "—" : `${preflightMs.toFixed(1)} ms`}</span>
-          <span className={`rounded px-1.5 py-0.5 text-[11px] ${within ? "bg-bastion-ok/15 text-emerald-300" : "bg-slate-500/15 text-slate-300"}`}>under 10 ms</span>
-          {totalMs !== null && <span className="hidden font-mono text-xs text-bastion-muted xl:inline">· {Math.round(totalMs)} ms total</span>}
-        </div>
+        <span className="text-slate-700">/</span>
 
-        <ScoreGauge score={score} />
-
-        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${st.cls}`} aria-live="polite">{st.label}</span>
-
-        <div className="ml-auto flex flex-wrap items-center gap-3">
-          <button
-            onClick={onRetry}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-bastion-muted hover:bg-bastion-surface hover:text-bastion-text"
-            title={online ? "Connected to the Bastion API. Click to re-check." : "API unreachable: running the offline demo engine. Click to retry."}
+        <div className="relative flex items-center">
+          <select
+            value={activeBrandId}
+            onChange={(e) => onSelectBrand(e.target.value)}
+            aria-label="Select brand manifest"
+            className="appearance-none bg-slate-900/90 hover:bg-slate-800 border border-slate-800 rounded-lg pl-2.5 pr-7 py-1 text-xs font-medium text-slate-200 focus:outline-none cursor-pointer transition-colors"
           >
-            {online ? <Wifi className="h-3.5 w-3.5 text-bastion-ok" /> : <WifiOff className="h-3.5 w-3.5 text-bastion-amber" />}
-            {online === null ? "Connecting" : online ? triadLabel : "Offline demo"}
-          </button>
-          <div role="radiogroup" aria-label="Reviewer role" className="flex rounded-lg border border-bastion-line bg-bastion-surface p-0.5">
-            {ROLES.map((r) => (
-              <button
-                key={r} role="radio" aria-checked={role === r} onClick={() => onRole(r)}
-                className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${role === r ? "bg-bastion-accent text-white" : "text-bastion-muted hover:text-bastion-text"}`}
-              >
-                {r}
-              </button>
+            {brands.map((b) => (
+              <option key={b.brand_id} value={b.brand_id} className="bg-slate-900 text-slate-100">
+                {b.brand_name} (v{b.version})
+              </option>
             ))}
-          </div>
+          </select>
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400 pointer-events-none absolute right-2" />
+        </div>
+
+        <button
+          onClick={onOpenPdfModal}
+          className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-300 hover:text-white bg-slate-900/70 hover:bg-slate-800 border border-slate-800 transition-colors cursor-pointer"
+          title="Upload a PDF brand book to compile a new BrandManifest via RAG"
+        >
+          <FileUp className="w-3.5 h-3.5 text-indigo-400" />
+          <span>Ingest PDF</span>
+        </button>
+
+        <button
+          onClick={onOpenLinterModal}
+          className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-300 hover:text-white bg-slate-900/70 hover:bg-slate-800 border border-slate-800 transition-colors cursor-pointer"
+          title="Open the live Chrome Extension content linter sandbox"
+        >
+          <Globe className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Web Linter</span>
+        </button>
+      </div>
+
+      {/* Center: Compact Telemetry */}
+      <div className="hidden xl:flex items-center gap-3 text-xs font-mono text-slate-400">
+        <span className="inline-flex items-center gap-1.5" title="Deterministic pre-flight latency">
+          <Zap className="w-3.5 h-3.5 text-emerald-400" />
+          <span className="text-slate-200">
+            {preflightMs !== null ? `${preflightMs.toFixed(1)}ms` : "—"}
+          </span>
+        </span>
+
+        <span className="text-slate-800">•</span>
+
+        <span className="inline-flex items-center gap-1.5">
+          <span>Score</span>
+          <span className={`font-semibold ${scoreColor}`}>
+            {score !== null ? `${score}/100` : "—"}
+          </span>
+        </span>
+
+        <span className="text-slate-800">•</span>
+
+        <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-sans font-medium ring-1 ring-inset ${st.cls}`}>
+          {st.label}
+        </span>
+
+        {isSessionLocked && (
+          <span className="inline-flex items-center gap-1 text-[11px] font-sans text-red-300 bg-red-500/10 border border-red-500/30 px-2 py-0.5 rounded-full">
+            <Lock className="w-3 h-3" />
+            Locked
+          </span>
+        )}
+      </div>
+
+      {/* Right: Guide, Webhooks Bell, Status Dot & Single Role Dropdown */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onOpenTour}
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-slate-300 hover:text-white bg-slate-900/70 hover:bg-slate-800 border border-slate-800 transition-colors cursor-pointer"
+          title="Open quick walkthrough"
+        >
+          <HelpCircle className="w-3.5 h-3.5 text-indigo-400" />
+          <span className="hidden sm:inline">Guide</span>
+        </button>
+
+        <button
+          onClick={onOpenWebhookModal}
+          className="relative p-1.5 rounded-lg text-slate-400 hover:text-slate-100 bg-slate-900/70 hover:bg-slate-800 border border-slate-800 transition-colors cursor-pointer"
+          title="Slack/Teams Webhooks & Governance Event Stream"
+        >
+          <Bell className="w-4 h-4" />
+          {webhookCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-indigo-600 text-[10px] font-mono text-white flex items-center justify-center">
+              {webhookCount}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={onRetry}
+          className="flex items-center gap-1.5 px-1.5 py-1 rounded-lg hover:bg-slate-900 transition-colors cursor-pointer"
+          title={online ? "Connected to FastAPI backend. Click to refresh." : "Running local deterministic engine. Click to reconnect."}
+        >
+          <span className={`w-2 h-2 rounded-full ${online ? "bg-emerald-400" : "bg-amber-400"}`} />
+        </button>
+
+        <div className="relative flex items-center">
+          <select
+            value={role}
+            onChange={(e) => onRole(e.target.value)}
+            aria-label="Active reviewer role"
+            className="appearance-none bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/40 text-indigo-200 rounded-lg pl-3 pr-7 py-1 text-xs font-medium focus:outline-none cursor-pointer transition-colors"
+          >
+            {ROLES.map((r) => (
+              <option key={r} value={r} className="bg-slate-900 text-slate-100">
+                {r}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="w-3.5 h-3.5 text-indigo-300 pointer-events-none absolute right-2" />
         </div>
       </div>
     </header>
